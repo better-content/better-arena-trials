@@ -51,13 +51,13 @@ public final class ArenaMatchService {
     }
 
     private static boolean inviteNearest(ServerPlayer challenger, ArenaTotemBlockEntity site) {
-        if (MATCHES.containsKey(challenger.getUUID()) || !insideArena(challenger, site.getBlockPos())) return message(challenger, "Stand inside the arena and finish your current challenge first.");
+        if (MATCHES.containsKey(challenger.getUUID()) || !inRange(challenger, site.getBlockPos())) return message(challenger, "Stay near the totem and finish your current challenge first.");
         ServerPlayer target = challenger.server.getPlayerList().getPlayers().stream()
                 .filter(p -> !p.getUUID().equals(challenger.getUUID()))
                 .filter(p -> p.level() == challenger.level() && !MATCHES.containsKey(p.getUUID()))
-                .filter(p -> insideArena(p, site.getBlockPos()))
+                .filter(p -> inRange(p, site.getBlockPos()))
                 .min(Comparator.comparingDouble(challenger::distanceToSqr)).orElse(null);
-        if (target == null) return message(challenger, "No available opponent is inside this arena.");
+        if (target == null) return message(challenger, "No available opponent is near this totem.");
         INVITES.put(target.getUUID(), new Invitation(challenger.getUUID(), site.getBlockPos(), challenger.level().dimension()));
         challenger.sendSystemMessage(net.minecraft.network.chat.Component.literal("Duel invitation sent to " + target.getGameProfile().getName() + "."));
         target.sendSystemMessage(net.minecraft.network.chat.Component.literal(challenger.getGameProfile().getName() + " challenged you. Open this totem and choose Accept duel."));
@@ -67,10 +67,10 @@ public final class ArenaMatchService {
     private static boolean acceptInvite(ServerPlayer target, ArenaTotemBlockEntity site) {
         Invitation invite = INVITES.remove(target.getUUID());
         if (invite == null || !invite.site.equals(site.getBlockPos()) || !invite.dimension.equals(target.level().dimension())) {
-            return message(target, "There is no duel invitation for this arena.");
+            return message(target, "There is no duel invitation for this totem.");
         }
         ServerPlayer challenger = target.server.getPlayerList().getPlayer(invite.challenger);
-        if (challenger == null || MATCHES.containsKey(challenger.getUUID()) || !insideArena(target, site.getBlockPos()) || !insideArena(challenger, site.getBlockPos())) {
+        if (challenger == null || MATCHES.containsKey(challenger.getUUID()) || !inRange(target, site.getBlockPos()) || !inRange(challenger, site.getBlockPos())) {
             return message(target, "The duel invitation expired.");
         }
         Match match = Match.duel(site.getBlockPos(), target.level().dimension(), challenger.getUUID(), target.getUUID());
@@ -81,12 +81,20 @@ public final class ArenaMatchService {
     }
 
     private static boolean startTrial(ServerPlayer player, ArenaTotemBlockEntity site, int tier) {
-        if (MATCHES.containsKey(player.getUUID()) || !insideArena(player, site.getBlockPos())) return message(player, "Stand inside the arena and finish your current challenge first.");
-        if (site.rewardCount() == 0) return message(player, "This arena's reward stock is depleted. Recorded duels are still available to view.");
+        if (MATCHES.containsKey(player.getUUID()) || !inRange(player, site.getBlockPos())) return message(player, "Stay near the totem and finish your current challenge first.");
+        if (site.rewardCount() == 0) return message(player, "This totem's reward stock is depleted. Recorded duels are still available to view.");
+        List<EntityType<? extends LivingEntity>> roster = trialRoster(tier);
+        List<BlockPos> spawnPositions = ArenaArea.trialSpawns(player.serverLevel(), site.getBlockPos(), roster.size());
+        if (spawnPositions.size() < roster.size()) return message(player, "There is not enough safe ground nearby for this trial.");
         Match match = Match.trial(site.getBlockPos(), player.level().dimension(), player.getUUID(), tier);
+        match.startedAt = player.serverLevel().getGameTime();
         MATCHES.put(player.getUUID(), match);
         stashAndKit(player, match, tier);
-        spawnTrialWave(player.serverLevel(), match, site.getBlockPos(), tier);
+        if (!spawnTrialWave(player.serverLevel(), match, roster, spawnPositions)) {
+            removeMatch(match, player.server);
+            restore(player);
+            return message(player, "The trial could not start. Your equipment was restored.");
+        }
         return message(player, "Trial " + tier + " begins. Defeat the encounter to claim one remaining unique reward.");
     }
 
@@ -140,25 +148,29 @@ public final class ArenaMatchService {
         player.inventoryMenu.broadcastChanges();
     }
 
-    private static void spawnTrialWave(ServerLevel level, Match match, BlockPos center, int tier) {
-        List<EntityType<? extends LivingEntity>> roster = switch (tier) {
+    private static List<EntityType<? extends LivingEntity>> trialRoster(int tier) {
+        return switch (tier) {
             case 1 -> List.of(EntityType.ZOMBIE, EntityType.ZOMBIE, EntityType.SKELETON);
             case 2 -> List.of(EntityType.PILLAGER, EntityType.SKELETON, EntityType.VINDICATOR, EntityType.PILLAGER);
             default -> List.of(EntityType.VINDICATOR, EntityType.VINDICATOR, EntityType.PILLAGER, EntityType.PILLAGER, EntityType.EVOKER);
         };
+    }
+
+    private static boolean spawnTrialWave(ServerLevel level, Match match,
+                                          List<EntityType<? extends LivingEntity>> roster, List<BlockPos> positions) {
         for (int i = 0; i < roster.size(); i++) {
             LivingEntity mob = roster.get(i).create(level);
-            if (mob == null) continue;
-            double angle = (Math.PI * 2.0 * i) / roster.size();
-            mob.moveTo(center.getX() + Math.cos(angle) * 8.0 + .5, center.getY() + 1,
-                    center.getZ() + Math.sin(angle) * 8.0 + .5, (float) (angle * 180.0 / Math.PI), 0);
+            if (mob == null) return false;
+            BlockPos spawn = positions.get(i);
+            mob.moveTo(spawn.getX() + .5, spawn.getY(), spawn.getZ() + .5,
+                    level.random.nextFloat() * 360.0F, 0);
             mob.getPersistentData().putUUID("arena_challenges:trial_owner", match.first);
-            if (level.addFreshEntity(mob)) {
-                match.trialMobs.add(mob.getUUID());
-                TRIAL_MOBS.put(mob.getUUID(), match);
-            }
+            if (!level.addFreshEntity(mob)) return false;
+            match.trialMobs.add(mob.getUUID());
+            TRIAL_MOBS.put(mob.getUUID(), match);
         }
         match.remainingMobs = match.trialMobs.size();
+        return true;
     }
 
     private static boolean showReplayStatus(ServerPlayer player, ArenaTotemBlockEntity site) {
@@ -178,7 +190,7 @@ public final class ArenaMatchService {
     }
 
     private static void completeTrial(Match match, ServerPlayer player) {
-        MATCHES.remove(player.getUUID());
+        removeMatch(match, player.server);
         restore(player);
         ELIGIBLE_REWARD_SITES.put(player.getUUID(), match.site);
         player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Trial complete. Open the totem to choose one unique reward."));
@@ -196,13 +208,18 @@ public final class ArenaMatchService {
             winner.sendSystemMessage(net.minecraft.network.chat.Component.literal("Your opponent forfeited. Open the totem to claim a unique reward."));
         }
         recordDuel(match, server, winnerId, "forfeit");
-        removeMatch(match);
+        removeMatch(match, server);
     }
 
-    private static void removeMatch(Match match) {
+    private static void removeMatch(Match match, MinecraftServer server) {
         MATCHES.remove(match.first, match);
         if (match.second != null) MATCHES.remove(match.second, match);
-        for (UUID mob : match.trialMobs) TRIAL_MOBS.remove(mob);
+        ServerLevel level = server.getLevel(match.dimension);
+        for (UUID mob : match.trialMobs) {
+            TRIAL_MOBS.remove(mob);
+            if (level != null && level.getEntity(mob) != null) level.getEntity(mob).discard();
+        }
+        match.trialMobs.clear();
     }
 
     private static void finishDuel(Match match, UUID loser, MinecraftServer server) {
@@ -216,7 +233,7 @@ public final class ArenaMatchService {
         }
         if (defeated != null) RETURN_POSITIONS.put(loser, match.site);
         recordDuel(match, server, winnerId, "final_death");
-        removeMatch(match);
+        removeMatch(match, server);
     }
 
     private static void recordDuel(Match match, MinecraftServer server, UUID winnerId, String result) {
@@ -236,7 +253,7 @@ public final class ArenaMatchService {
         if (named) {
             record.putString("DuelistA", first.getGameProfile().getName());
             record.putString("DuelistB", second.getGameProfile().getName());
-            record.putString("Winner", winnerId != null && winnerId.equals(match.first) ? "A" : "B");
+            if (winnerId != null) record.putString("Winner", winnerId.equals(match.first) ? "A" : "B");
         }
         ArenaTraceBridge.append(level, archiveId(level, match.site), record);
     }
@@ -265,12 +282,11 @@ public final class ArenaMatchService {
         frame.putByte(prefix + "p", (byte) Math.round(player.getXRot()));
     }
 
-    private static boolean insideArena(ServerPlayer player, BlockPos center) {
-        return Math.abs(player.getX() - center.getX()) <= 11.5 && Math.abs(player.getZ() - center.getZ()) <= 11.5
-                && Math.abs(player.getY() - center.getY()) <= 6.0;
+    private static boolean inRange(ServerPlayer player, BlockPos center) {
+        return ArenaArea.contains(player.getX(), player.getY(), player.getZ(), center);
     }
 
-    public static boolean nearArena(ServerPlayer player, BlockPos center) { return insideArena(player, center); }
+    public static boolean nearTotem(ServerPlayer player, BlockPos center) { return inRange(player, center); }
 
     private static boolean message(ServerPlayer player, String text) {
         player.sendSystemMessage(net.minecraft.network.chat.Component.literal(text));
@@ -293,7 +309,7 @@ public final class ArenaMatchService {
             Match match = MATCHES.get(loser.getUUID());
             if (match != null && match.kind == Match.Kind.DUEL) finishDuel(match, loser.getUUID(), level.getServer());
             else if (match != null && match.kind == Match.Kind.TRIAL) {
-                removeMatch(match);
+                removeMatch(match, level.getServer());
                 RETURN_POSITIONS.put(loser.getUUID(), match.site);
             }
         }
@@ -304,9 +320,7 @@ public final class ArenaMatchService {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!player.getPersistentData().contains(SNAPSHOT_KEY, 10)) return;
         BlockPos returnPos = RETURN_POSITIONS.remove(player.getUUID());
-        if (returnPos != null) {
-            player.teleportTo(returnPos.getX() + .5, returnPos.getY() + 1, returnPos.getZ() + .5);
-        }
+        if (returnPos != null) returnNearTotem(player, returnPos);
         restore(player);
     }
 
@@ -316,7 +330,7 @@ public final class ArenaMatchService {
         Match match = MATCHES.get(player.getUUID());
         if (match != null) {
             if (match.kind == Match.Kind.DUEL) forfeit(match, player.getUUID(), player.server);
-            else { restore(player); removeMatch(match); }
+            else { restore(player); removeMatch(match, player.server); }
         }
         restore(player);
         INVITES.remove(player.getUUID());
@@ -335,28 +349,62 @@ public final class ArenaMatchService {
         if (server.getTickCount() % 2 == 0) new HashSet<>(MATCHES.values()).forEach(match -> captureFrame(match, server));
         if (server.getTickCount() % 10 != 0) return;
         for (Match match : new HashSet<>(MATCHES.values())) {
+            Set<UUID> expired = new HashSet<>();
             for (UUID participant : match.participants()) {
                 ServerPlayer player = server.getPlayerList().getPlayer(participant);
-                if (player != null && !insideArena(player, match.site)) {
-                    if (match.kind == Match.Kind.DUEL) forfeit(match, participant, server);
-                    else {
-                        restore(player);
-                        removeMatch(match);
-                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Trial cancelled when you left the arena."));
+                if (player == null) continue;
+                boolean inside = player.level().dimension().equals(match.dimension) && inRange(player, match.site);
+                if (inside) {
+                    if (match.outsideSince.remove(participant) != null) {
+                        player.displayClientMessage(net.minecraft.network.chat.Component.literal("Back in range of the totem."), true);
                     }
-                    break;
+                    continue;
+                }
+                long now = server.overworld().getGameTime();
+                Long leftAt = match.outsideSince.putIfAbsent(participant, now);
+                if (leftAt == null) leftAt = now;
+                int seconds = ArenaArea.secondsLeft(leftAt, now);
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        "Return to the totem: " + seconds + "s"), true);
+                if (seconds == 0) expired.add(participant);
+            }
+            if (expired.size() == 2 && match.kind == Match.Kind.DUEL) {
+                for (UUID participant : match.participants()) {
+                    ServerPlayer player = server.getPlayerList().getPlayer(participant);
+                    if (player != null) {
+                        restore(player);
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                                "Duel ended because both players stayed outside the totem's range."));
+                    }
+                }
+                recordDuel(match, server, null, "both_left");
+                removeMatch(match, server);
+            } else if (!expired.isEmpty()) {
+                UUID participant = expired.iterator().next();
+                if (match.kind == Match.Kind.DUEL) forfeit(match, participant, server);
+                else {
+                    ServerPlayer player = server.getPlayerList().getPlayer(participant);
+                    if (player != null) {
+                        restore(player);
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Trial cancelled after leaving the totem's range."));
+                    }
+                    removeMatch(match, server);
                 }
             }
         }
         for (var entry : new HashMap<>(RETURN_POSITIONS).entrySet()) {
             ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
             if (player != null) {
-                BlockPos pos = entry.getValue();
-                player.teleportTo(pos.getX() + .5, pos.getY() + 1, pos.getZ() + .5);
+                returnNearTotem(player, entry.getValue());
                 restore(player);
                 RETURN_POSITIONS.remove(entry.getKey());
             }
         }
+    }
+
+    private static void returnNearTotem(ServerPlayer player, BlockPos totem) {
+        BlockPos landing = ArenaArea.safeReturn(player.serverLevel(), totem);
+        if (landing != null) player.teleportTo(landing.getX() + .5, landing.getY(), landing.getZ() + .5);
     }
 
     @SubscribeEvent
@@ -374,23 +422,11 @@ public final class ArenaMatchService {
                     .then(Commands.literal("visual-open").executes(context -> {
                         if (!(context.getSource().getEntity() instanceof ServerPlayer player)) return 0;
                         ServerLevel level = player.serverLevel();
-                        BlockPos center = player.blockPosition().relative(player.getDirection(), 5).below();
-                        for (int dx = -12; dx <= 12; dx++) {
-                            for (int dz = -12; dz <= 12; dz++) {
-                                BlockPos floor = center.offset(dx, 0, dz);
-                                level.setBlock(floor, net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState(), 3);
-                                if (Math.abs(dx) == 12 || Math.abs(dz) == 12) {
-                                    for (int dy = 1; dy <= 3; dy++) level.setBlock(floor.above(dy), net.minecraft.world.level.block.Blocks.DEEPSLATE_BRICK_WALL.defaultBlockState(), 3);
-                                } else {
-                                    for (int dy = 1; dy <= 5; dy++) level.setBlock(floor.above(dy), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
-                                }
-                            }
-                        }
-                        for (int dx : new int[]{-8, 8}) for (int dz : new int[]{-8, 8}) {
-                            BlockPos pillar = center.offset(dx, 0, dz);
-                            level.setBlock(pillar, net.minecraft.world.level.block.Blocks.POLISHED_BLACKSTONE_BRICKS.defaultBlockState(), 3);
-                            for (int dy = 1; dy <= 3; dy++) level.setBlock(pillar.above(dy), net.minecraft.world.level.block.Blocks.CRYING_OBSIDIAN.defaultBlockState(), 3);
-                        }
+                        BlockPos ahead = player.blockPosition().relative(player.getDirection(), 5);
+                        BlockPos center = new BlockPos(ahead.getX(), level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                                ahead.getX(), ahead.getZ()), ahead.getZ());
+                        if (!level.getBlockState(center).canBeReplaced()
+                                || !level.getFluidState(center).isEmpty()) return 0;
                         level.setBlock(center, com.bettercontent.arenachallenges.registry.ArenaBlocks.ARENA_TOTEM.get().defaultBlockState(), 3);
                         if (!(level.getBlockEntity(center) instanceof ArenaTotemBlockEntity site)) return 0;
                         site.emptyStockForVisualValidation();
@@ -428,6 +464,7 @@ public final class ArenaMatchService {
         final UUID second;
         final Set<UUID> trialMobs = new HashSet<>();
         final ListTag frames = new ListTag();
+        final Map<UUID, Long> outsideSince = new HashMap<>();
         int remainingMobs;
         long startedAt;
 

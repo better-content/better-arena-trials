@@ -6,7 +6,7 @@ modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
 authors="Better Content"
-description='''Discover generated challenge arenas, duel friends, and claim finite rewards through combat trials.'''
+description='''Discover challenge totems, duel friends on natural terrain, and claim finite rewards through combat trials.'''
 [[dependencies.${mod_id}]]
 modId="forge"
 mandatory=true

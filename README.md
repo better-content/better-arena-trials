@@ -2,8 +2,8 @@
 
 # Arena Challenges
 
-Arena Challenges adds generated, bounded combat arenas to the overworld. Each site has a central
-Arena Totem, three shared one-time rewards, player duels, curated solo encounters, and a replay
+Arena Challenges places standalone totems in the overworld. Each totem uses the surrounding natural
+terrain for player duels and solo encounters, with three shared one-time rewards and a replay
 gallery. Trials provide a solo route to the same reward stock. Duel and trial kits are loaned for
 the match and the player's inventory and experience are restored afterward.
 
@@ -16,6 +16,6 @@ Arena Challenges stores duel replays through Player Traces in separate append-on
 only. Player names appear only when both duelists enabled `/arena consent-names` before the duel.
 Replays are visual echoes and cannot attack or deal damage.
 
-Player Traces is a required runtime dependency. The arena structure generates in broad, dry
-overworld biomes with a gentle slope. Each ring is about 25 blocks across. Players inside the ring
-can invite a nearby player or begin one of three solo trials from the totem.
+Player Traces is a required runtime dependency. Totems generate in broad, dry overworld biomes
+without changing the surrounding terrain. Fights take place within 48 blocks of the totem.
+Players who leave are warned and have 10 seconds to return before forfeiting or ending a trial.

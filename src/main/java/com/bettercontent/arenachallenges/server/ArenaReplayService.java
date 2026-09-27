@@ -26,8 +26,8 @@ public final class ArenaReplayService {
 
     public static boolean play(net.minecraft.world.entity.player.Player rawPlayer, ArenaTotemBlockEntity site, int page, int row) {
         if (!(rawPlayer instanceof ServerPlayer player) || site.getLevel() == null) return false;
-        if (!ArenaMatchService.nearArena(player, site.getBlockPos())) {
-            player.sendSystemMessage(Component.literal("Stand in the arena to view its duel recordings."));
+        if (!ArenaMatchService.nearTotem(player, site.getBlockPos())) {
+            player.sendSystemMessage(Component.literal("Stay near the totem to view its duel recordings."));
             return true;
         }
         int archiveSize = ArenaTraceBridge.count(player.serverLevel(), site.archiveId());
