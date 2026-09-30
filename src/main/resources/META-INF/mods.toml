@@ -14,7 +14,7 @@ versionRange="[${forge_version},)"
 ordering="NONE"
 side="BOTH"
 [[dependencies.${mod_id}]]
-modId="player_traces"
+modId="better_player_traces"
 mandatory=true
 versionRange="[0.1.0,)"
 ordering="AFTER"

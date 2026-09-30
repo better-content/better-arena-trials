@@ -1,0 +1,8 @@
+{
+  "block.better_arena_trials.arena_totem": "Arena Totem",
+  "container.better_arena_trials.totem": "Arena Challenge",
+  "item.better_arena_trials.champion_blade": "Champion's Blade",
+  "item.better_arena_trials.warden_axe": "Warden's Axe",
+  "item.better_arena_trials.duelist_sigil": "Duelist's Sigil",
+  "item.better_arena_trials.duelist_sigil.desc": "Right-click for Strength II for 30 seconds. Recharges in 5 minutes."
+}

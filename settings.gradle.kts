@@ -5,4 +5,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "arena-challenges"
+rootProject.name = "better-arena-trials"

@@ -1,0 +1,6 @@
+{
+  "type": "better_arena_trials:arena",
+  "biomes": "#better_arena_trials:has_structure/arena",
+  "spawn_overrides": {},
+  "step": "surface_structures"
+}

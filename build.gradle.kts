@@ -5,7 +5,7 @@ plugins {
 
 group = property("mod_group") as String
 version = property("mod_version") as String
-base { archivesName.set("arena-challenges") }
+base { archivesName.set("better-arena-trials") }
 
 java.toolchain.languageVersion.set(JavaLanguageVersion.of(17))
 
@@ -13,13 +13,15 @@ repositories {
     maven("https://maven.minecraftforge.net")
     maven("https://thedarkcolour.github.io/KotlinForForge/")
     mavenCentral()
-    flatDir { dirs(System.getenv("BC_CUSTOM_MOD_JAR_DIR") ?: project.file("test-libs")) }
+    flatDir {
+        dirs(System.getenv("BC_CUSTOM_MOD_JAR_DIR") ?: project.file("../better-player-traces/build/libs"))
+    }
 }
 
 dependencies {
     minecraft("net.minecraftforge:forge:${property("minecraft_version")}-${property("forge_version")}")
     implementation("thedarkcolour:kotlinforforge:${property("kotlinforforge_version")}")
-    implementation(fg.deobf("local:player-traces:0.1.0"))
+    implementation(fg.deobf("local:better-player-traces:0.1.0"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
@@ -30,7 +32,7 @@ minecraft {
         configureEach {
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "info")
-            mods { create("arena_challenges") { source(sourceSets.main.get()) } }
+            mods { create("better_arena_trials") { source(sourceSets.main.get()) } }
         }
         create("visualClient") {
             parent(baseClient)
@@ -42,7 +44,7 @@ minecraft {
         create("gameTestServer") {
             workingDirectory(project.file("run-gametest"))
             args("--nogui")
-            property("forge.enabledGameTestNamespaces", "arena_challenges")
+            property("forge.enabledGameTestNamespaces", "better_arena_trials")
         }
     }
 }
@@ -77,20 +79,20 @@ tasks.register("headlessGameTest") {
         val log = layout.projectDirectory.file("run-gametest/logs/latest.log").asFile
         val output = if (log.isFile) log.readText() else ""
         check(output.contains("Started game test server")) {
-            "Arena Challenges GameTest server did not reach server startup; inspect run-gametest/logs/latest.log"
+            "Better Arena Trials GameTest server did not reach server startup; inspect run-gametest/logs/latest.log"
         }
         val completed = Regex("All (\\d+) required tests passed").find(output)?.groupValues?.get(1)?.toIntOrNull() ?: 0
         check(completed > 0) {
-            "Arena Challenges GameTest run completed no tests; inspect run-gametest/logs/latest.log"
+            "Better Arena Trials GameTest run completed no tests; inspect run-gametest/logs/latest.log"
         }
         check(!output.contains("[main/FATAL]") && !output.contains("Failed to complete lifecycle event")) {
-            "Arena Challenges GameTest server logged a fatal/error; inspect run-gametest/logs/latest.log"
+            "Better Arena Trials GameTest server logged a fatal/error; inspect run-gametest/logs/latest.log"
         }
     }
 }
 tasks.register("verifyFull") { dependsOn("verifyFast", "headlessGameTest") }
 
-val runtimeArtifactName = "arena-challenges-${project.version}.jar"
+val runtimeArtifactName = "better-arena-trials-${project.version}.jar"
 val stageRuntimeJar by tasks.registering(Copy::class) {
     dependsOn("reobfJar")
     from(layout.buildDirectory.file("reobfJar/output.jar"))

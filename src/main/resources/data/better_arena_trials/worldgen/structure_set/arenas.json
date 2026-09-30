@@ -1,0 +1,11 @@
+{
+  "placement": {
+    "type": "minecraft:random_spread",
+    "salt": 791346211,
+    "separation": 28,
+    "spacing": 44
+  },
+  "structures": [
+    { "structure": "better_arena_trials:arena", "weight": 1 }
+  ]
+}
