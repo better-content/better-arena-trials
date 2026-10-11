@@ -1,6 +1,10 @@
 # Better Arena Trials
 
-# Better Arena Trials
+## Scope and authority
+
+This repository owns its mod-specific behavior and authoring inputs. Read [local instructions](AGENTS.md)
+and the [shared documentation/policy index](../../better-content-modpack/docs/README.md).
+
 
 Better Arena Trials places standalone totems in the overworld. Each totem uses the surrounding natural
 terrain for player duels and solo encounters, with three shared one-time rewards and a replay

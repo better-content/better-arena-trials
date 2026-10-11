@@ -1,6 +1,10 @@
 # Better Arena Trials
 
-- Mod ID: `better_arena_trials`; package: `com.bettercontent.betterarenatrials`.
-- Target Minecraft Forge 1.20.1.
-- Run `./gradlew verifyFull` before committing or pushing.
-- Keep generated Gradle, build, run, log, and IDE output untracked.
+Forge 1.20.1 / Java 17; mod ID `better_arena_trials`;
+base package `com.bettercontent.betterarenatrials`.
+Source gate: `./gradlew verifyFull`; stage: `./gradlew stageRuntimeJar`.
+Artifact: `build/libs/better-arena-trials-<version>.jar`.
+
+Read [shared workspace policy](../../better-content-modpack/docs/policies/workspace.md)
+and its linked testing/disposal policies. Docs-only changes use the shared document check
+and `git diff --check`, not unrelated runtime builds.
