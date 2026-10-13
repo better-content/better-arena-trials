@@ -22,6 +22,11 @@ dependencies {
     minecraft("net.minecraftforge:forge:${property("minecraft_version")}-${property("forge_version")}")
     implementation("thedarkcolour:kotlinforforge:${property("kotlinforforge_version")}")
     implementation(fg.deobf("local:better-player-traces:0.1.0"))
+    val providerDirectory = System.getenv("BC_CUSTOM_MOD_JAR_DIR")
+    val doorJar = if (providerDirectory == null) project.file("../better-deaths-door/build/libs/better-deaths-door-1.0.0.jar")
+        else file(providerDirectory).resolve("better-deaths-door-1.0.0.jar")
+    require(doorJar.isFile) { "Missing Door provider $doorJar; stage better-deaths-door first" }
+    compileOnly(files(doorJar))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 

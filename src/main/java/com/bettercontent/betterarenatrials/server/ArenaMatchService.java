@@ -35,8 +35,24 @@ public final class ArenaMatchService {
     private static final Map<UUID, BlockPos> RETURN_POSITIONS = new HashMap<>();
     private static final Map<UUID, BlockPos> ELIGIBLE_REWARD_SITES = new HashMap<>();
     private static final Map<UUID, Match> TRIAL_MOBS = new HashMap<>();
+    private static final Map<UUID, Long> RECORDS_SUSPENDED_THROUGH = new HashMap<>();
 
     private ArenaMatchService() {}
+
+    /** Read-only native containment, including a defeated participant awaiting native respawn. */
+    public static boolean containsLifeRecordParticipant(ServerPlayer player) {
+        return MATCHES.containsKey(player.getUUID()) || RETURN_POSITIONS.containsKey(player.getUUID());
+    }
+    /** Also excludes the finishing tick's native credited kill, posted after match completion. */
+    public static boolean suspendsLifeRecordCollection(ServerPlayer player) {
+        return containsLifeRecordParticipant(player)
+            || RECORDS_SUSPENDED_THROUGH.getOrDefault(player.getUUID(), Long.MIN_VALUE) >= player.server.overworld().getGameTime();
+    }
+
+    @SubscribeEvent
+    public static void clearLifeRecordCollectionGuard(net.minecraftforge.event.server.ServerStoppedEvent event) {
+        RECORDS_SUSPENDED_THROUGH.clear();
+    }
 
     public static boolean handleButton(net.minecraft.world.entity.player.Player player, ArenaTotemBlockEntity site, int button) {
         if (!(player instanceof ServerPlayer serverPlayer) || site.getLevel() == null) return false;
@@ -212,6 +228,9 @@ public final class ArenaMatchService {
     }
 
     private static void removeMatch(Match match, MinecraftServer server) {
+        // Native kill stats arrive after LivingDeathEvent completes the last trial wave. Keep that
+        // committed terminal transaction suspended through this tick without changing match mechanics.
+        for (UUID participant : match.participants()) RECORDS_SUSPENDED_THROUGH.put(participant, server.overworld().getGameTime());
         MATCHES.remove(match.first, match);
         if (match.second != null) MATCHES.remove(match.second, match);
         ServerLevel level = server.getLevel(match.dimension);
@@ -346,6 +365,7 @@ public final class ArenaMatchService {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         MinecraftServer server = event.getServer();
         if (event.phase != TickEvent.Phase.END) return;
+        RECORDS_SUSPENDED_THROUGH.values().removeIf(tick -> tick < server.overworld().getGameTime());
         if (server.getTickCount() % 2 == 0) new HashSet<>(MATCHES.values()).forEach(match -> captureFrame(match, server));
         if (server.getTickCount() % 10 != 0) return;
         for (Match match : new HashSet<>(MATCHES.values())) {

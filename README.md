@@ -23,3 +23,17 @@ Replays are visual echoes and cannot attack or deal damage.
 Player Traces is a required runtime dependency. Totems generate in broad, dry overworld biomes
 without changing the surrounding terrain. Fights take place within 48 blocks of the totem.
 Players who leave are warned and have 10 seconds to return before forfeiting or ending a trial.
+
+When Death's Door is installed, Arena registers a typed read-only life-record eligibility provider.
+Active matches and defeated participants awaiting respawn are contained: match activity does not
+advance ordinary-world life counters, and contained deaths retain the same world life ID. The
+finishing tick remains excluded from collection so the native credited kill for the final trial mob
+cannot leak into ordinary-world records after the match is removed. This collection guard does not
+contain later ordinary deaths, award records, or change match, kit, damage or reward mechanics.
+Source builds stage Death's Door before Player Traces and Arena; no reflection or guessed persistent
+player tags are used for this integration.
+
+Separately from life-record eligibility, the existing kit/reward item deferred register is wired
+into the mod event bus. Native match-start coverage exposed the previously missing registration;
+the repair registers the already-authored Champion's Blade, Warden's Axe and Duelist's Sigil under
+their unchanged identifiers. It introduces no new items and changes no kit, reward or match rules.

@@ -19,6 +19,7 @@ public final class ArenaChallenges {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         ArenaBlocks.BLOCKS.register(modBus);
         ArenaBlocks.ITEMS.register(modBus);
+        com.bettercontent.betterarenatrials.registry.ArenaItems.ITEMS.register(modBus);
         ArenaBlockEntities.TYPES.register(modBus);
         ArenaMenus.MENUS.register(modBus);
         ArenaStructures.TYPES.register(modBus);
