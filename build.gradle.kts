@@ -105,3 +105,5 @@ val stageRuntimeJar by tasks.registering(Copy::class) {
     rename { runtimeArtifactName }
 }
 tasks.named("assemble") { dependsOn(stageRuntimeJar) }
+
+apply(from = "gradle/native-gametest-fixture.gradle")

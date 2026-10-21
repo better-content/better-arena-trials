@@ -101,16 +101,23 @@ public final class ArenaMatchService {
         if (site.rewardCount() == 0) return message(player, "This totem's reward stock is depleted. Recorded duels are still available to view.");
         List<EntityType<? extends LivingEntity>> roster = trialRoster(tier);
         List<BlockPos> spawnPositions = ArenaArea.trialSpawns(player.serverLevel(), site.getBlockPos(), roster.size());
-        if (spawnPositions.size() < roster.size()) return message(player, "There is not enough safe ground nearby for this trial.");
+        if (spawnPositions.size() < roster.size()) {
+            outcome(player, site.getBlockPos(), "arena.trial", "rejected", "insufficient_safe_ground");
+            return message(player, "There is not enough safe ground nearby for this trial.");
+        }
         Match match = Match.trial(site.getBlockPos(), player.level().dimension(), player.getUUID(), tier);
         match.startedAt = player.serverLevel().getGameTime();
         MATCHES.put(player.getUUID(), match);
         stashAndKit(player, match, tier);
         if (!spawnTrialWave(player.serverLevel(), match, roster, spawnPositions)) {
             removeMatch(match, player.server);
-            restore(player);
+            restore(player, match);
+            if (com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG.enabled("match"))
+                com.bettercontent.betterarenatrials.diagnostics.FeatureTelemetry.trial(com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG, context(player, match.site), false);
             return message(player, "The trial could not start. Your equipment was restored.");
         }
+        if (com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG.enabled("match"))
+            com.bettercontent.betterarenatrials.diagnostics.FeatureTelemetry.trial(com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG, context(player, match.site), true);
         return message(player, "Trial " + tier + " begins. Defeat the encounter to claim one remaining unique reward.");
     }
 
@@ -120,6 +127,9 @@ public final class ArenaMatchService {
         MATCHES.put(second.getUUID(), match);
         stashAndKit(first, match, 2);
         stashAndKit(second, match, 2);
+        var log = com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG;
+        if (log.enabled("match")) com.bettercontent.betterarenatrials.diagnostics.FeatureTelemetry.duel(log,
+                context(first, match.site), second.getUUID(), match.startedAt);
     }
 
     private static void stashAndKit(ServerPlayer player, Match match, int tier) {
@@ -149,7 +159,14 @@ public final class ArenaMatchService {
         player.getInventory().setChanged();
     }
 
-    private static void restore(ServerPlayer player) {
+    private static void restore(ServerPlayer player) { restore(player, null, null, -1); }
+
+    private static void restore(ServerPlayer player, Match match) {
+        restore(player, match == null ? null : match.site, match == null ? null : match.dimension,
+                match == null ? -1 : match.startedAt);
+    }
+
+    private static void restore(ServerPlayer player, BlockPos origin, net.minecraft.resources.ResourceKey<Level> originDimension, long startedTick) {
         CompoundTag data = player.getPersistentData();
         if (!data.contains(SNAPSHOT_KEY, 10)) return;
         CompoundTag snapshot = data.getCompound(SNAPSHOT_KEY);
@@ -162,6 +179,9 @@ public final class ArenaMatchService {
         player.getPersistentData().remove(SNAPSHOT_KEY);
         player.getInventory().setChanged();
         player.inventoryMenu.broadcastChanges();
+        var log = com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG;
+        if (log.enabled("match")) com.bettercontent.betterarenatrials.diagnostics.FeatureTelemetry.equipment(log,
+                context(player, origin, originDimension), startedTick);
     }
 
     private static List<EntityType<? extends LivingEntity>> trialRoster(int tier) {
@@ -202,12 +222,13 @@ public final class ArenaMatchService {
         if (!site.remainingRewards().contains(reward)) return message(player, "That unique reward has already been claimed.");
         if (!site.claimReward(reward, player)) return message(player, "The reward could not be claimed.");
         ELIGIBLE_REWARD_SITES.remove(player.getUUID());
+        outcome(player, site.getBlockPos(), "arena.reward", "claimed", "stock_decremented");
         return message(player, "Claimed " + reward + ".");
     }
 
     private static void completeTrial(Match match, ServerPlayer player) {
         removeMatch(match, player.server);
-        restore(player);
+        restore(player, match);
         ELIGIBLE_REWARD_SITES.put(player.getUUID(), match.site);
         player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Trial complete. Open the totem to choose one unique reward."));
         player.openMenu((net.minecraft.world.MenuProvider) player.serverLevel().getBlockEntity(match.site));
@@ -217,14 +238,30 @@ public final class ArenaMatchService {
         ServerPlayer quitter = server.getPlayerList().getPlayer(loser);
         UUID winnerId = match.other(loser);
         ServerPlayer winner = winnerId == null ? null : server.getPlayerList().getPlayer(winnerId);
-        if (quitter != null) restore(quitter);
+        if (quitter != null) restore(quitter, match);
         if (winner != null) {
-            restore(winner);
+            restore(winner, match);
             ELIGIBLE_REWARD_SITES.put(winner.getUUID(), match.site);
             winner.sendSystemMessage(net.minecraft.network.chat.Component.literal("Your opponent forfeited. Open the totem to claim a unique reward."));
         }
         recordDuel(match, server, winnerId, "forfeit");
         removeMatch(match, server);
+    }
+
+    private static com.bettercontent.betterarenatrials.diagnostics.PlaytestLog.Context context(ServerPlayer player, BlockPos origin) {
+        return context(player, origin, null);
+    }
+
+    private static com.bettercontent.betterarenatrials.diagnostics.PlaytestLog.Context context(ServerPlayer player, BlockPos origin,
+            net.minecraft.resources.ResourceKey<Level> originDimension) {
+        return new com.bettercontent.betterarenatrials.diagnostics.PlaytestLog.Context("server",
+                (originDimension == null ? player.level().dimension() : originDimension).location().toString(), player.serverLevel().getGameTime(), player.getStringUUID(),
+                origin == null ? "" : origin.getX() + "," + origin.getY() + "," + origin.getZ());
+    }
+
+    private static void outcome(ServerPlayer player, BlockPos origin, String event, String result, String reason) {
+        var log = com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG;
+        if (log.enabled("match")) log.debug("match", event, context(player, origin), result, reason, null);
     }
 
     private static void removeMatch(Match match, MinecraftServer server) {
@@ -239,6 +276,12 @@ public final class ArenaMatchService {
             if (level != null && level.getEntity(mob) != null) level.getEntity(mob).discard();
         }
         match.trialMobs.clear();
+        var log = com.bettercontent.betterarenatrials.PlaytestDiagnostics.LOG;
+        if (log.enabled("match")) log.debug("match", "arena.match",
+                new com.bettercontent.betterarenatrials.diagnostics.PlaytestLog.Context("server", match.dimension.location().toString(),
+                        level == null ? -1 : level.getGameTime(), match.first.toString(),
+                        match.site.getX() + "," + match.site.getY() + "," + match.site.getZ()),
+                "removed", "terminal_cleanup", () -> com.bettercontent.betterarenatrials.diagnostics.PlaytestLog.fields("started_tick", match.startedAt, "kind", match.kind));
     }
 
     private static void finishDuel(Match match, UUID loser, MinecraftServer server) {
@@ -246,7 +289,7 @@ public final class ArenaMatchService {
         ServerPlayer winner = winnerId == null ? null : server.getPlayerList().getPlayer(winnerId);
         ServerPlayer defeated = server.getPlayerList().getPlayer(loser);
         if (winner != null) {
-            restore(winner);
+            restore(winner, match);
             ELIGIBLE_REWARD_SITES.put(winnerId, match.site);
             winner.sendSystemMessage(net.minecraft.network.chat.Component.literal("You won. Open the totem to choose one unique reward."));
         }
@@ -340,7 +383,7 @@ public final class ArenaMatchService {
         if (!player.getPersistentData().contains(SNAPSHOT_KEY, 10)) return;
         BlockPos returnPos = RETURN_POSITIONS.remove(player.getUUID());
         if (returnPos != null) returnNearTotem(player, returnPos);
-        restore(player);
+        restore(player, returnPos, null, -1);
     }
 
     @SubscribeEvent
@@ -349,9 +392,9 @@ public final class ArenaMatchService {
         Match match = MATCHES.get(player.getUUID());
         if (match != null) {
             if (match.kind == Match.Kind.DUEL) forfeit(match, player.getUUID(), player.server);
-            else { restore(player); removeMatch(match, player.server); }
+            else { restore(player, match); removeMatch(match, player.server); }
         }
-        restore(player);
+        restore(player, match);
         INVITES.remove(player.getUUID());
         INVITES.values().removeIf(invite -> invite.challenger.equals(player.getUUID()));
     }
@@ -392,7 +435,7 @@ public final class ArenaMatchService {
                 for (UUID participant : match.participants()) {
                     ServerPlayer player = server.getPlayerList().getPlayer(participant);
                     if (player != null) {
-                        restore(player);
+                        restore(player, match);
                         player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
                                 "Duel ended because both players stayed outside the totem's range."));
                     }
@@ -405,7 +448,7 @@ public final class ArenaMatchService {
                 else {
                     ServerPlayer player = server.getPlayerList().getPlayer(participant);
                     if (player != null) {
-                        restore(player);
+                        restore(player, match);
                         player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Trial cancelled after leaving the totem's range."));
                     }
                     removeMatch(match, server);
@@ -416,7 +459,7 @@ public final class ArenaMatchService {
             ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
             if (player != null) {
                 returnNearTotem(player, entry.getValue());
-                restore(player);
+                restore(player, entry.getValue(), null, -1);
                 RETURN_POSITIONS.remove(entry.getKey());
             }
         }

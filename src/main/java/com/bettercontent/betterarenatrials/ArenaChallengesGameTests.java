@@ -22,6 +22,25 @@ public final class ArenaChallengesGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty")
+    public static void typedArchiveRoundTripDistinguishesMissingRecord(GameTestHelper helper) {
+        var level = helper.getLevel();
+        String archive = "typed-boundary-" + helper.absolutePos(BlockPos.ZERO).asLong();
+        int before = com.bettercontent.betterarenatrials.server.ArenaTraceBridge.count(level, archive);
+        helper.assertTrue(com.bettercontent.betterarenatrials.server.ArenaTraceBridge.available(), "Required Traces provider is absent");
+        helper.assertTrue(com.bettercontent.betterarenatrials.server.ArenaTraceBridge.get(level, archive, before) == null,
+                "Unpublished archive index must be missing, not an invented record");
+        var record = new net.minecraft.nbt.CompoundTag();
+        record.putInt("BoundaryFixture", 17);
+        com.bettercontent.betterarenatrials.server.ArenaTraceBridge.append(level, archive, record);
+        helper.assertTrue(com.bettercontent.betterarenatrials.server.ArenaTraceBridge.count(level, archive) == before + 1,
+                "Typed append must publish exactly one archive record");
+        var restored = com.bettercontent.betterarenatrials.server.ArenaTraceBridge.get(level, archive, before);
+        helper.assertTrue(restored != null && restored.getInt("BoundaryFixture") == 17,
+                "Typed provider/NBT boundary lost the published record");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty")
     public static void arenaTotemIsRegistered(GameTestHelper helper) {
         ResourceLocation id = new ResourceLocation(ArenaChallenges.MOD_ID, "arena_totem");
         helper.assertTrue(ArenaBlocks.ARENA_TOTEM.isPresent(), "Arena Totem block registration is missing");
