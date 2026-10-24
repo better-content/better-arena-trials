@@ -27,11 +27,7 @@ outside detail suppression while preserving the existing empty-gallery fallback.
 compressed payload is logged. Pure emitter/contracts and the native typed archive round-trip/missing
 record case supplement match/reward tests; logs alone are not durable-storage or runtime acceptance.
 
-## Scope and authority
-
-This repository owns its mod-specific behavior and authoring inputs. Read [local instructions](AGENTS.md)
-and the [shared documentation/policy index](../../better-content-modpack/docs/README.md).
-
+## Scope
 
 Better Arena Trials places standalone totems in the overworld. Each totem uses the surrounding natural
 terrain for player duels and solo encounters, with three shared one-time rewards and a replay
